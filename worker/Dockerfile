@@ -1,4 +1,10 @@
-FROM ubuntu:latest
-LABEL authors="Octavian"
+FROM python:3.12-slim
+WORKDIR /app
 
-ENTRYPOINT ["top", "-b"]
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY shared/ ./shared/
+COPY worker/ ./worker/
+
+CMD ["python", "-m", "worker.worker"]

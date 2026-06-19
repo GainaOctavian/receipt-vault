@@ -1,13 +1,19 @@
 services:
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:stable
     ports:
       - "4566:4566"
     environment:
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN}
       - SERVICES=s3,sqs
       - DEBUG=1
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   postgres:
     image: postgres:16
@@ -18,7 +24,73 @@ services:
       - POSTGRES_PASSWORD=receipts
       - POSTGRES_DB=receipts
     volumes:
-      - pgdata:/var/lib/postgres/data
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U receipts"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot container that creates the S3 bucket and SQS queue, then exits
+  setup:
+    image: amazon/aws-cli:latest
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=eu-central-1
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      aws --endpoint-url=http://localstack:4566 s3 mb s3://receipts;
+      aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name receipts-to-process;
+      echo 'Setup done.'
+      "
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      localstack:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      setup:
+        condition: service_completed_successfully
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=eu-central-1
+      - S3_BUCKET=receipts
+      - SQS_QUEUE=receipts-to-process
+      - DATABASE_URL=postgresql://receipts:receipts@postgres:5432/receipts
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    depends_on:
+      localstack:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      setup:
+        condition: service_completed_successfully
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=eu-central-1
+      - S3_BUCKET=receipts
+      - SQS_QUEUE=receipts-to-process
+      - DATABASE_URL=postgresql://receipts:receipts@postgres:5432/receipts
 
 volumes:
   pgdata:
