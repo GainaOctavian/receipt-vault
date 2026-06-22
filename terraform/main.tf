@@ -147,3 +147,66 @@ resource "aws_security_group" "rds" {
     Project = var.project_name
   }
 }
+
+# Gateway endpoint for S3 — adds a route, no network interface
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private.id]
+
+  tags = {
+    Name    = "${var.project_name}-s3-endpoint"
+    Project = var.project_name
+  }
+}
+
+# Interface endpoint for SQS — a private network interface inside the subnet
+resource "aws_vpc_endpoint" "sqs" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.sqs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private.id]
+  security_group_ids  = [aws_security_group.endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name    = "${var.project_name}-sqs-endpoint"
+    Project = var.project_name
+  }
+}
+
+# Route table for the private subnet
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name    = "${var.project_name}-private-rt"
+    Project = var.project_name
+  }
+}
+
+resource "aws_route_table_association" "private" {
+  subnet_id      = aws_subnet.private.id
+  route_table_id = aws_route_table.private.id
+}
+
+# Security group for interface endpoints: allow HTTPS from inside the VPC
+resource "aws_security_group" "endpoints" {
+  name        = "${var.project_name}-endpoints-sg"
+  description = "Allow HTTPS from within the VPC to interface endpoints"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTPS from within the VPC"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  tags = {
+    Name    = "${var.project_name}-endpoints-sg"
+    Project = var.project_name
+  }
+}
