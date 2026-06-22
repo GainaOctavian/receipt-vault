@@ -15,6 +15,7 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_cidr
   map_public_ip_on_launch = true
+  availability_zone = "${var.aws_region}a"
 
   tags = {
     Name    = "${var.project_name}-public"
@@ -26,9 +27,21 @@ resource "aws_subnet" "public" {
 resource "aws_subnet" "private" {
   vpc_id     = aws_vpc.main.id
   cidr_block = var.private_subnet_cidr
-
+  availability_zone = "${var.aws_region}a"
   tags = {
     Name    = "${var.project_name}-private"
+    Project = var.project_name
+  }
+}
+
+# Second private subnet in a different AZ, required by the RDS subnet group
+resource "aws_subnet" "private_b" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.private_subnet_b_cidr
+  availability_zone = "${var.aws_region}b"
+
+  tags = {
+    Name    = "${var.project_name}-private-b"
     Project = var.project_name
   }
 }
@@ -207,6 +220,43 @@ resource "aws_security_group" "endpoints" {
 
   tags = {
     Name    = "${var.project_name}-endpoints-sg"
+    Project = var.project_name
+  }
+}
+
+# Subnet group: RDS needs to know which subnets it can live in
+resource "aws_db_subnet_group" "main" {
+  name       = "${var.project_name}-db-subnet-group"
+  subnet_ids = [aws_subnet.private.id, aws_subnet.private_b.id]
+
+  tags = {
+    Name    = "${var.project_name}-db-subnet-group"
+    Project = var.project_name
+  }
+}
+
+# The RDS Postgres instance
+resource "aws_db_instance" "main" {
+  identifier     = "${var.project_name}-db"
+  engine         = "postgres"
+  engine_version = "16"
+  instance_class = "db.t3.micro"   # free-tier eligible
+
+  allocated_storage = 20            # GB, free-tier limit
+  storage_type      = "gp2"
+
+  db_name  = var.db_name
+  username = var.db_username
+  password = var.db_password
+
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+
+  publicly_accessible = false       # never exposed to the internet
+  skip_final_snapshot = true        # don't keep a backup on destroy (learning/testing only not production!)
+
+  tags = {
+    Name    = "${var.project_name}-db"
     Project = var.project_name
   }
 }
