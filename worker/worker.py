@@ -3,7 +3,7 @@ import json
 import time
 
 from shared.aws_clients import s3_client, sqs_client
-from shared.db import get_connection
+from shared.db import get_connection, ensure_schema
 
 BUCKET = os.getenv("S3_BUCKET", "receipts")
 QUEUE_NAME = os.getenv("SQS_QUEUE", "receipts-to-process")
@@ -51,7 +51,9 @@ def process_message(message):
 
 
 def main():
-    print("Worker started, polling for messages...")
+    print("Worker started, ensuring schema...")
+    ensure_schema()
+    print("Schema ready, polling for messages...")
     while True:
         # Long-poll the queue (waits up to 20s for a message)
         response = sqs.receive_message(

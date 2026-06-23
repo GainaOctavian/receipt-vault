@@ -7,4 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY shared/ ./shared/
 COPY worker/ ./worker/
 
+ENV PYTHONUNBUFFERED=1
+
 CMD ["python", "-m", "worker.worker"]

@@ -51,3 +51,9 @@ variable "private_subnet_b_cidr" {
   type        = string
   default     = "10.0.3.0/24"
 }
+
+variable "public_subnet_b_cidr" {
+  description = "CIDR for a second public subnet in another AZ (ALB requirement)"
+  type        = string
+  default     = "10.0.4.0/24"
+}
